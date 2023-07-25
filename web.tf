@@ -9,7 +9,7 @@ resource "aws_vpc" "vpc" {
 
 data "aws_availability_zones" "available" {}
 
-resource "aws_subnet" "instance" {
+resource "aws_subnet" "public" {
   availability_zone = data.aws_availability_zones.available.names[0]
   cidr_block = "10.0.1.0/24"
   vpc_id = aws_vpc.vpc.id
@@ -60,7 +60,7 @@ resource "aws_security_group" "securitygroup" {
 resource "aws_instance" "web-ec2" {
   instance_type = "t2.micro"
   ami = "ami-08541bb85074a743a" # Amazon Linux 2
-  subnet_id = aws_subnet.nat_gateway.id
+  subnet_id = aws_subnet.private.id
   security_groups = [aws_security_group.securitygroup.id]
   key_name = aws_key_pair.ssh.key_name
   # disable_api_termination = false
@@ -77,7 +77,7 @@ output "instance_private_ip" {
   value = aws_instance.web-ec2.private_ip
 }
 
-resource "aws_subnet" "nat_gateway" {
+resource "aws_subnet" "private" {
   availability_zone = data.aws_availability_zones.available.names[0]
   cidr_block = "10.0.2.0/24"
   vpc_id = aws_vpc.vpc.id
@@ -86,27 +86,27 @@ resource "aws_subnet" "nat_gateway" {
   }
 }
 
-resource "aws_internet_gateway" "nat_gateway" {
+resource "aws_internet_gateway" "internet_gateway" {
   vpc_id = aws_vpc.vpc.id
   tags = {
     "Name" = "dev_internet_gateway"
   }
 }
 
-resource "aws_route_table" "nat_gateway" {
+resource "aws_route_table" "internet_gateway" {
   vpc_id = aws_vpc.vpc.id
   route {
     cidr_block = "0.0.0.0/0"
-    gateway_id = aws_internet_gateway.nat_gateway.id
+    gateway_id = aws_internet_gateway.internet_gateway.id
   }
   tags = {
     Name = "dev_public_rt"
   }
 }
 
-resource "aws_route_table_association" "nat_gateway" {
-  subnet_id = aws_subnet.nat_gateway.id
-  route_table_id = aws_route_table.nat_gateway.id
+resource "aws_route_table_association" "internet_gateway" {
+  subnet_id = aws_subnet.public.id
+  route_table_id = aws_route_table.internet_gateway.id
 }
 
 resource "aws_eip" "nat_gateway" {
@@ -119,7 +119,7 @@ resource "aws_eip" "nat_gateway" {
 
 resource "aws_nat_gateway" "nat_gateway" {
   allocation_id = aws_eip.nat_gateway.id
-  subnet_id = aws_subnet.nat_gateway.id
+  subnet_id = aws_subnet.public.id
   tags = {
     "Name" = "dev_nat_gateway"
   }
@@ -129,7 +129,7 @@ output "nat_gateway_ip" {
   value = aws_eip.nat_gateway.public_ip
 }
 
-resource "aws_route_table" "instance" {
+resource "aws_route_table" "private" {
   vpc_id = aws_vpc.vpc.id
   route {
     cidr_block = "0.0.0.0/0"
@@ -140,15 +140,15 @@ resource "aws_route_table" "instance" {
   }
 }
 
-resource "aws_route_table_association" "instance" {
-  subnet_id = aws_subnet.instance.id
-  route_table_id = aws_route_table.instance.id
+resource "aws_route_table_association" "private" {
+  subnet_id = aws_subnet.private.id
+  route_table_id = aws_route_table.private.id
 }
 
 resource "aws_instance" "ec2jumphost" {
   instance_type = "t2.micro"
   ami = "ami-08541bb85074a743a" # https://cloud-images.ubuntu.com/locator/ec2/ (Ubuntu)
-  subnet_id = aws_subnet.nat_gateway.id
+  subnet_id = aws_subnet.public.id
   security_groups = [aws_security_group.securitygroup.id]
   key_name = aws_key_pair.ssh.key_name
   disable_api_termination = false
